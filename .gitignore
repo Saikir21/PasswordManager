@@ -1,3 +1,18 @@
+# Виртуальное окружение
+venv/
+env/
+
+# Кэш Python
+__pycache__/
+*.pyc
+
+# Секреты и переменные окружения
+*.env
+SECRET_PEPPER.env
+
+# Локальные базы данных
+*.db
+passwords.db*.env
 *.db
 *.key
 venv/
