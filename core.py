@@ -2,6 +2,7 @@ import sqlite3
 import secrets
 import base64
 import hashlib
+import hmac
 import time
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -16,6 +17,15 @@ class Database:
         self.conn = sqlite3.connect(config.DB_PATH)
         self.cursor = self.conn.cursor()
         self.create_tables()
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False  
+
+    def close(self):
+        self.conn.close()
 
     def create_tables(self):
         self.cursor.execute('''
@@ -52,8 +62,22 @@ class Database:
         return self.cursor.fetchone()
 
     def get_all_services(self):
-        self.cursor.execute("SELECT service FROM accounts")
+        self.cursor.execute("SELECT service FROM accounts ORDER BY service")
         return [row[0] for row in self.cursor.fetchall()]
+
+    def search_services(self, pattern: str) -> list[str]:
+        # SQL LIKE с wildcards '%pattern%' — ищем вхождение подстроки.
+        # Фильтруем на уровне БД, а не тащим все записи в Python.
+        self.cursor.execute(
+            "SELECT service FROM accounts WHERE service LIKE ? ORDER BY service",
+            (f"%{pattern.lower()}%",)
+        )
+        return [row[0] for row in self.cursor.fetchall()]
+
+
+    def has_account(self, service) -> bool:
+        self.cursor.execute("SELECT 1 FROM accounts WHERE service = ?", (service,))
+        return self.cursor.fetchone() is not None
 
     def delete_account(self, service):
         self.cursor.execute("DELETE FROM accounts WHERE service = ?", (service,))
@@ -99,6 +123,13 @@ class VaultManager:
         self.security = Security()
         self.authenticate(master_password)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.db.close()
+        return False
+
     def authenticate(self, master_password):
         auth_data = self.db.get_auth()
         if auth_data is None:
@@ -110,7 +141,7 @@ class VaultManager:
         else:
             salt, stored_hash = auth_data
             current_hash = self.security.hash_password(master_password, salt)
-            if current_hash != stored_hash:
+            if not hmac.compare_digest(current_hash, stored_hash):
                 time.sleep(2)
                 raise ValueError("Неверный мастер-пароль!")
             self.security.setup_cipher(master_password, salt)
@@ -126,10 +157,18 @@ class VaultManager:
             decrypted_pass = self.security.decrypt(enc_pass)
             # Возвращаем объект датакласса
             return AccountEntry(service=service.lower(), login=login, password=decrypted_pass)
-        return None
+        return None 
 
     def get_services_list(self):
         return self.db.get_all_services()
+
+    def search_entries(self, pattern: str) -> list[str]:
+        # Делегируем поиск напрямую в Database — VaultManager не знает SQL,
+        # он просто передаёт запрос ниже по слоям.
+        return self.db.search_services(pattern)
+
+    def has_entry(self, service) -> bool:
+        return self.db.has_account(service.lower())
 
     def delete_pass(self, service):
         return self.db.delete_account(service.lower())
