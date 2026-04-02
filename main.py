@@ -4,21 +4,7 @@ import pyperclip
 import threading
 from core import VaultManager
 import config
-
-def is_password_strong(password):
-    if len(password) < 8:
-        return False, "❌ Ошибка: В пароле должно быть не меньше 8 символов."
-    has_upper = any(char.isupper() for char in password)
-    has_digit = any(char.isdigit() for char in password)
-    if not has_upper:
-        return False, "❌ Ошибка: Добавьте хотя бы одну заглавную букву."
-    if not has_digit:
-        return False, "❌ Ошибка: Добавьте хотя бы одну цифру."
-    return True, "✅ Пароль прошел проверку!"
-
-def generate_password(length=config.DEFAULT_PASS_LENGTH):
-    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
+from utils import generate_password, evaluate_strength
 
 def clear_clipboard():
     pyperclip.copy("")
@@ -29,10 +15,9 @@ def main():
     master_pass = input("Введите/Создайте ваш мастер-пароль: ")
 
     try:
-        # --- Исправление #1 в main.py ---
-        # `with` гарантирует, что __exit__ всегда вызовется и БД закроется.
-        # Без `with` БД закрывалась бы только при сборе мусора (GC), что непредсказуемо.
         vault = VaultManager(master_pass)
+        if vault.is_new_vault: # <-- Проверяем флаг здесь
+            print("\n[СИСТЕМА] Создание нового защищенного хранилища...")
     except ValueError as e:
         print(f"❌ Ошибка: {e}")
         return
@@ -47,9 +32,10 @@ def main():
             print("3. Показать все сервисы")
             print("4. Сгенерировать надежный пароль")
             print("5. Удалить пароль")
-            print("6. Выход")
-            
-            choice = input("\nВыберите действие (1-6): ")
+            print("6. Экспорт списка сервисов") 
+            print("7. Выход")
+
+            choice = input("\nВыберите действие (1-7): ")
 
             match choice:
                 case '1':
@@ -60,7 +46,9 @@ def main():
                         pyperclip.copy(entry.password)
                         print(f"✅ [{entry.service.upper()}] Данные найдены! Логин: {entry.login}")
                         print(f"👉 Пароль скопирован в буфер обмена на {config.CLIPBOARD_TIMEOUT} секунд.")
-                        threading.Timer(config.CLIPBOARD_TIMEOUT, clear_clipboard).start()
+                        timer = threading.Timer(config.CLIPBOARD_TIMEOUT, clear_clipboard)
+                        timer.daemon = True 
+                        timer.start()
                     else:
                         # Fallback: ищем похожие сервисы по подстроке.
                         matches = vault.search_entries(service)
@@ -75,7 +63,9 @@ def main():
                                 pyperclip.copy(entry.password)
                                 print(f"✅ [{entry.service.upper()}] Данные найдены! Логин: {entry.login}")
                                 print(f"👉 Пароль скопирован в буфер обмена на {config.CLIPBOARD_TIMEOUT} секунд.")
-                                threading.Timer(config.CLIPBOARD_TIMEOUT, clear_clipboard).start()
+                                timer = threading.Timer(config.CLIPBOARD_TIMEOUT, clear_clipboard)
+                                timer.daemon = True 
+                                timer.start()
                             else:
                                 print("Отменено.")
                         else:
@@ -97,11 +87,13 @@ def main():
                         pyperclip.copy(password)
                         print(f"✅ Сгенерирован пароль: {password}")
                         print(f"👉 Он скопирован в буфер обмена на {config.CLIPBOARD_TIMEOUT} секунд!")
-                        threading.Timer(config.CLIPBOARD_TIMEOUT, clear_clipboard).start()
+                        timer = threading.Timer(config.CLIPBOARD_TIMEOUT, clear_clipboard)
+                        timer.daemon = True 
+                        timer.start()
                     else:
                         while True:
                             password = input("Введите пароль вручную: ")
-                            is_ok, message = is_password_strong(password)
+                            is_ok, message = evaluate_strength(password)
                             if is_ok:
                                 print(message)
                                 break 
@@ -134,7 +126,9 @@ def main():
                     pyperclip.copy(new_pass)
                     print(f"✅ Ваш новый пароль: {new_pass}")
                     print(f"👉 Пароль скопирован в буфер обмена. Очистка через {config.CLIPBOARD_TIMEOUT} секунд.")
-                    threading.Timer(config.CLIPBOARD_TIMEOUT, clear_clipboard).start()
+                    timer = threading.Timer(config.CLIPBOARD_TIMEOUT, clear_clipboard)
+                    timer.daemon = True 
+                    timer.start()
 
                 case '5':
                     service = input('Напишите сервис для удаления: ')
@@ -144,11 +138,20 @@ def main():
                         print('❌ Такого сервиса нет.')
 
                 case '6':
-                    print("Сейф закрыт. До свидания!")
+                    success, message = vault.export_services_to_file()
+                    if success:
+                        print(f"✅ {message}")
+                    else:
+                        print(f"❌ {message}")
+                case "7":
+                    print ("До свидания!")
                     break
                     
                 case _:
-                    print("❌ Ошибка: выберите пункт от 1 до 6.")
+                    print("❌ Ошибка: выберите пункт от 1 до 7.")
+
+                
+                
 
 if __name__ == "__main__":
     main()

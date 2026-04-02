@@ -13,8 +13,8 @@ import config
 from models import AccountEntry
 
 class Database:
-    def __init__(self):
-        self.conn = sqlite3.connect(config.DB_PATH)
+    def __init__(self, db_path: str):
+        self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
         self.create_tables()
     def __enter__(self):
@@ -119,8 +119,9 @@ class Security:
 
 class VaultManager:
     def __init__(self, master_password):
-        self.db = Database()
+        self.db = Database(config.DB_PATH)
         self.security = Security()
+        self.is_new_vault = False
         self.authenticate(master_password)
 
     def __enter__(self):
@@ -133,7 +134,7 @@ class VaultManager:
     def authenticate(self, master_password):
         auth_data = self.db.get_auth()
         if auth_data is None:
-            print("[СИСТЕМА] Создание нового защищенного хранилища...")
+            self.is_new_vault = True
             salt = self.security.generate_salt()
             pass_hash = self.security.hash_password(master_password, salt)
             self.db.set_auth(salt, pass_hash)
@@ -171,4 +172,24 @@ class VaultManager:
         return self.db.has_account(service.lower())
 
     def delete_pass(self, service):
-        return self.db.delete_account(service.lower())
+        return self.db.delete_account(service.lower())  
+
+    def export_services_to_file(self, filepath="services_backup.txt"):
+        """Экспортирует список сервисов и логинов в текстовый файл."""
+        services = self.get_services_list()
+        if not services:
+            return False, "База пуста."
+
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write("=== БЭКАП СЕРВИСОВ ===\n\n")
+                for service in services:
+                    # Загружаем полную запись, чтобы получить логин
+                    entry = self.load_entry(service)
+                    if entry:
+                        f.write(f"Сервис: {entry.service.upper()}\n")
+                        f.write(f"Логин: {entry.login}\n")
+                        f.write("-" * 20 + "\n")
+            return True, f"Экспорт завершен. Файл: {filepath}"
+        except Exception as e:
+            return False, f"Ошибка при экспорте: {e}"
