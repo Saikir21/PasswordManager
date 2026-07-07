@@ -1,3 +1,6 @@
+
+
+```text
 # Виртуальное окружение
 venv/
 env/
@@ -9,11 +12,8 @@ __pycache__/
 # Секреты и переменные окружения
 *.env
 SECRET_PEPPER.env
+*.key
 
 # Локальные базы данных
 *.db
-passwords.db*.env
-*.db
-*.key
-venv/
-__pycache__/
+passwords.db
